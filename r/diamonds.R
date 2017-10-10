@@ -115,17 +115,18 @@ watchlist <- list(train = dtrain, test = dtest)
 
 param <- list(max_depth = 8, 
               learning_rate = 0.01, 
-              nthread = 2, 
+              nthread = 7, 
               lambda = 0.2, 
               objective = "reg:linear", 
               eval_metric = "rmse", 
               subsample = 0.7)
 
-fit_xgb <- xgb.train(param, 
-                     dtrain, 
-                     watchlist = watchlist, 
-                     nrounds = 850, 
-                     early_stopping_rounds = 5)
+system.time(fit_xgb <- xgb.train(param, 
+                                 dtrain, 
+                                 watchlist = watchlist, 
+                                 nrounds = 850, 
+                                 early_stopping_rounds = 5,
+                                 verbose = 0))
 r2(test$y, predict(fit_xgb, test$X)) # 0.99132
 
 partialDiamondsPlot(fit_xgb)
@@ -142,7 +143,8 @@ params <- list(objective = "regression",
                metric = "l2",
                learning_rate = 0.01,
                num_leaves = 127,
-               min_data_in_leaf = 20)
+               min_data_in_leaf = 20,
+               nthread = 7)
 
 system.time(fit_lgb <- lgb.train(data = dtrain,
                                  params = params, 

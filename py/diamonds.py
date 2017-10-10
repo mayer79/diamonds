@@ -102,7 +102,7 @@ watchlist = [dtrain, dtest]
 
 param = {"max_depth": 8, 
          "learning_rate": 0.01, 
-         "nthread": 2, 
+         "nthread": 7, 
          "lambda": 0.2, 
          "objective": "reg:linear", 
          "eval_metric": "rmse", 
@@ -125,7 +125,8 @@ params = {"objective": "regression",
            "metric": "l2",
            "learning_rate": 0.01,
            "num_leaves": 127,
-           "min_data_in_leaf": 20}
+           "min_data_in_leaf": 20,
+           "nthread": 7}
 
 %time fit_lgb = lgb.train(params, dtrain, num_boost_round = 850)
 r2(y_test, fit_lgb.predict(X_test)) # 0.990430205807542
