@@ -192,8 +192,41 @@ for (i in seq_len(n)) {
 # load("paramGrid.RData", verbose = TRUE)
 head(paramGrid <- paramGrid[order(-paramGrid$score), ])
 
+
+#============================================================
+# Figure out best m
+#============================================================
+
+# this validation split is necessary because lightgbm has no
+# cv predictions yet
+set.seed(397)
+.in2 <- sample(c(FALSE, TRUE), nrow(train$X), replace = TRUE, p = c(0.3, 0.7))
+
+dtrain2 <- lgb.Dataset(train$X[.in2, ], 
+                       label = train$y[.in2])
+valid <- list(X = train$X[!.in2, ], y = train$y[!.in2])
+
+# max m
+m <- 10
+
+# keep test predictions, no model
+predTest2 <- vector(mode = "list", length = m)
+
+for (i in 2:m){#(i in seq_len(m)) {
+  fit_temp <- lgb.train(paramGrid[i, -(1:2)], 
+                        data = dtrain2, 
+                        nrounds = floor(paramGrid[i, "iteration"] * 1.05),
+                        objective = "regression",
+                        verbose = -1)
+  predTest2[[i]] <- predict(fit_temp, valid$X)
+  print(r2(rowMeans(do.call(cbind, predTest2[seq_len(i)])), valid$y))
+}
+
+#============================================================
 # Use best m
-m <- 5
+#============================================================
+
+m <- 4
 
 # keep test predictions, no model
 predList <- vector(mode = "list", length = m)
@@ -204,13 +237,13 @@ for (i in seq_len(m)) {
   
   fit_temp <- lgb.train(paramGrid[i, -(1:2)], 
                         data = dtrain, 
-                        nrounds = paramGrid[i, "iteration"],
+                        nrounds = paramGrid[i, "iteration"] * 1.05,
                         objective = "regression",
-                        verbose = 0L)
+                        verbose = -1)
   
   predList[[i]] <- predict(fit_temp, test$X)
 }
 
 pred <- rowMeans(do.call(cbind, predList))
-r2(test$y, pred) # 0.99125
+r2(test$y, pred) # 0.991265
 
