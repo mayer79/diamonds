@@ -8,7 +8,7 @@ import lightgbm as lgb
 import xgboost as xgb
 from glmnet_py import glmnet
 from ggplot import diamonds # for data set "diamonds"
-from sklearn.cross_validation import train_test_split
+from sklearn.model_selection import train_test_split
 # source("../partialPlot/R/partialPlot.R") # or your path
 
 import matplotlib.pyplot as plt
@@ -22,9 +22,9 @@ import seaborn as sns
 diamonds.head()
 
 diamonds[["log_price", "log_carat"]] = np.log(diamonds[["price", "carat"]])
-diamonds["cut"] = diamonds["cut"].factorize(sort=True)[0]
+diamonds["cut"] = 1*(diamonds.cut == "Fair") + 2*(diamonds.cut == "Good") + 3*(diamonds.cut == "Very Good") + 4*(diamonds.cut == "Premium") + 5*(diamonds.cut == "Ideal")
 diamonds["color"] = diamonds["color"].factorize(sort=True)[0]
-diamonds["clarity"] = diamonds["clarity"].factorize(sort=True)[0]
+diamonds["clarity"] = 1*(diamonds.clarity == "I1") + 2*(diamonds.clarity == "SI2") + 3*(diamonds.clarity == "SI1") + 4*(diamonds.clarity == "VS2") + 5*(diamonds.clarity == "VS1") + 6*(diamonds.clarity == "VVS2") + 7*(diamonds.clarity == "VVS1") + 8*(diamonds.clarity ==  "IF")
 
 # Train/test split
 x = ("log_carat", "cut", "color", "clarity", "depth", "table")
@@ -109,7 +109,7 @@ param = {"max_depth": 8,
          "subsample": 0.7}
 
 %time fit_xgb = xgb.train(param, dtrain, num_boost_round = 850)
-r2(y_test, fit_xgb.predict(dtest)) # 0.9904
+r2(y_test, fit_xgb.predict(dtest)) # 0.9906
 
 # partialDiamondsPlot(fit_xgb)
 
