@@ -207,10 +207,10 @@ head(paramGrid <- paramGrid[order(-paramGrid$score), ])
 # Use best only (no ensembling)
 cat("Best rmse (CV):", -paramGrid[1, "score"]) # 0.09608951
 
-fit_lgb <- lgb.train(paramGrid[1, -(1:2)], 
+system.time(fit_lgb <- lgb.train(paramGrid[1, -(1:2)], 
                      data = dtrain_lgb, 
                      nrounds = paramGrid[1, "iteration"] * 1.05,
-                     objective = "regression")
+                     objective = "regression"))
 
 # Interpretation
 imp_lgb <- lgb.importance(fit_lgb)

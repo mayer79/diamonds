@@ -7,6 +7,9 @@ library(ranger)
 library(randomForestSRC)
 library(Rborist)
 library(h2o)
+library(lightgbm)
+library(ggplot2)
+library(xgboost)
 
 #======================================================================
 # Data prep 
@@ -37,6 +40,10 @@ testDF <- diamonds[!.in, c(y, x)]
 dtrain_xgb <- xgb.DMatrix(train$X, label = train$y)
 watchlist <- list(train = dtrain_xgb)
 
+# For lightGBM
+dtrain_lgb <- lgb.Dataset(train$X, label = train$y)
+
+
 #======================================================================
 # Small function
 #======================================================================
@@ -56,7 +63,7 @@ system.time(fit_ranger <- ranger(reformulate(x, y),
                                  num.trees = 500, 
                                  min.node.size = 5,
                                  mtry = mtry,
-                                 seed = 837363)) # 14.2
+                                 seed = 837363)) # 5.5
 pred <- predict(fit_ranger, testDF)$predictions
 perf(test$y, pred) # 0.98896
 object.size(fit_ranger) # 318 MB
@@ -69,7 +76,7 @@ system.time(fit_rfsrc <- rfsrc(reformulate(x, y),
                                ntree = 500, 
                                nodedepth = 20,
                                nodesize = 5,
-                               seed = 837363)) # 33.1
+                               seed = 837363)) # 15
 pred <- predict(fit_rfsrc, testDF)$predicted
 perf(test$y, pred) # 0.989343
 object.size(fit_rfsrc) # 541 MB
@@ -98,7 +105,7 @@ perf(test$y, pred) # 0.988672
 object.size(fit_rbor) # 407 MB
 
 # h2o
-h2o.init(nthreads = 4)
+h2o.init(nthreads = 8)
 h2o.train <- as.h2o(trainDF)
 h2o.test <- as.h2o(testDF)
 
@@ -111,7 +118,7 @@ system.time(fit_h2o <- h2o.randomForest(x = x,
                                         min_rows = 5,
                                         nbins = 20,
                                         seed = 22342,
-                                        min_split_improvement = 0)) # 27.6
+                                        min_split_improvement = 0)) # 22
 pred <- as.data.frame(predict(fit_h2o, h2o.test))$predict
 perf(test$y, pred) # 0.9890738
 
@@ -130,8 +137,27 @@ system.time(fit_xgb <- xgb.train(param,
                                  watchlist = watchlist,
                                  nrounds = 1,
                                  num_parallel_tree = 500,
-                                 verbose = 0)) # 26.6 sec
+                                 verbose = 0)) # 21 sec
 pred <- predict(fit_xgb, test$X)
-perf(test$y, pred) # 0.9888
+perf(test$y, pred) # 0.9892
 object.size(fit_xgb) # 459 MB
-rm(fit_xgb)
+
+# lgb
+param <- list(learning_rate = 1,
+              nthread = 8,
+              objective = "regression_l2",
+              metric = "rmse",
+              bagging_fraction = 0.63,
+              bagging_freq = 1,
+              feature_fraction = 1/3,
+              max_depth = 20,
+              num_leaves = 2^10,
+              boosting_type = "rf")
+
+system.time(fit_lgb <- lgb.train(param,
+                                 dtrain_lgb,
+                                 nrounds = 500,
+                                 verbose = 0)) # 26.6 sec
+pred <- predict(fit_lgb, test$X)
+perf(test$y, pred) # 0.9888
+object.size(fit_lgb) # 459 MB
