@@ -2,14 +2,17 @@
 # Benchmark of most important RF implementations available in R
 #======================================================================
 
+library(ggplot2) # contains diamonds data set
+
 library(randomForest)
+library(parallelRandomForest)
 library(ranger)
 library(randomForestSRC)
 library(Rborist)
 library(h2o)
-library(lightgbm)
-library(ggplot2)
 library(xgboost)
+
+# library(lightgbm)
 
 #======================================================================
 # Data prep 
@@ -65,7 +68,7 @@ system.time(fit_ranger <- ranger(reformulate(x, y),
                                  mtry = mtry,
                                  seed = 837363)) # 5.5
 pred <- predict(fit_ranger, testDF)$predictions
-perf(test$y, pred) # 0.98896
+perf(test$y, pred) # 0.989
 object.size(fit_ranger) # 318 MB
 rm(fit_ranger)
 
@@ -76,9 +79,9 @@ system.time(fit_rfsrc <- rfsrc(reformulate(x, y),
                                ntree = 500, 
                                nodedepth = 20,
                                nodesize = 5,
-                               seed = 837363)) # 15
+                               seed = 837363)) # 20
 pred <- predict(fit_rfsrc, testDF)$predicted
-perf(test$y, pred) # 0.989343
+perf(test$y, pred) # 0.989
 object.size(fit_rfsrc) # 541 MB
 rm(fit_rfsrc)
 
@@ -92,6 +95,7 @@ system.time(fit_rf <- randomForest(reformulate(x, y),
 perf(test$y, predict(fit_rf, testDF)) # 0.9889682
 object.size(fit_rf) # 357 MB
 
+
 # RBORIST
 set.seed(345)
 system.time(fit_rbor <- Rborist(x = train$X, y = train$y, 
@@ -99,9 +103,9 @@ system.time(fit_rbor <- Rborist(x = train$X, y = train$y,
                                 autoCompress = mtry / length(x),  
                                 minInfo = 0,
                                 nLevel = 20,
-                                minNode = 5)) # 38.64
+                                minNode = 5)) # 18
 pred <- predict(fit_rbor, test$X)$yPred
-perf(test$y, pred) # 0.988672
+perf(test$y, pred) # 0.989
 object.size(fit_rbor) # 407 MB
 
 # h2o
@@ -118,9 +122,9 @@ system.time(fit_h2o <- h2o.randomForest(x = x,
                                         min_rows = 5,
                                         nbins = 20,
                                         seed = 22342,
-                                        min_split_improvement = 0)) # 22
+                                        min_split_improvement = 0)) # 26
 pred <- as.data.frame(predict(fit_h2o, h2o.test))$predict
-perf(test$y, pred) # 0.9890738
+perf(test$y, pred) # 0.989
 
 # xgboost
 param <- list(max_depth = 20,
@@ -137,10 +141,10 @@ system.time(fit_xgb <- xgb.train(param,
                                  watchlist = watchlist,
                                  nrounds = 1,
                                  num_parallel_tree = 500,
-                                 verbose = 0)) # 21 sec
+                                 verbose = 0)) # 27 sec
 pred <- predict(fit_xgb, test$X)
-perf(test$y, pred) # 0.9892
-object.size(fit_xgb) # 459 MB
+perf(test$y, pred) # 0.989
+object.size(fit_xgb) # 466 MB
 
 # lgb
 param <- list(learning_rate = 1,
@@ -152,12 +156,14 @@ param <- list(learning_rate = 1,
               feature_fraction = 1/3,
               max_depth = 20,
               num_leaves = 2^10,
+              min_child_weight = 5,
+              min_child_samples = 10,
               boosting_type = "rf")
 
 system.time(fit_lgb <- lgb.train(param,
                                  dtrain_lgb,
                                  nrounds = 500,
-                                 verbose = 0)) # 26.6 sec
+                                 verbose = 0)) # 24 sec
 pred <- predict(fit_lgb, test$X)
 perf(test$y, pred) # 0.9888
 object.size(fit_lgb) # 459 MB
