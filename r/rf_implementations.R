@@ -2,22 +2,22 @@
 # Benchmark of most important RF implementations available in R
 #======================================================================
 
+library(tidyverse)
 library(randomForest)
 library(ranger)
 library(randomForestSRC)
 library(Rborist)
 library(h2o)
+library(xgboost)
 
 #======================================================================
 # Data prep 
 #======================================================================
 
-diamonds <- transform(as.data.frame(diamonds),
-                      log_price = log(price),
-                      log_carat = log(carat),
-                      cut = as.numeric(cut),
-                      color = as.numeric(color),
-                      clarity = as.numeric(clarity))
+diamonds <- diamonds %>% 
+  mutate_if(is.ordered, as.numeric) %>% 
+  mutate(log_price = log(price),
+         log_carat = log(carat))
 
 # Train/test split
 set.seed(3928272)
@@ -26,9 +26,9 @@ set.seed(3928272)
 x <- c("log_carat", "cut", "color", "clarity", "depth", "table")
 y <- "log_price"
 
-train <- list(y = diamonds[.in, y],
+train <- list(y = diamonds[[y]][.in], 
               X = as.matrix(diamonds[.in, x]))
-test <- list(y = diamonds[!.in, y],
+test <- list(y = diamonds[[y]][!.in],
              X = as.matrix(diamonds[!.in, x]))
 trainDF <- diamonds[.in, c(y, x)]
 testDF <- diamonds[!.in, c(y, x)]
@@ -43,10 +43,12 @@ watchlist <- list(train = dtrain_xgb)
 
 # Some performance measures
 perf <- function(y, pred) {
-  c(r2 = 1 - var(y - pred) / var(y),
-    rmse = sqrt(mean((y - pred)^2)),
-    mae = mean(abs(y - pred)))
+  res <- y - pred
+  c(r2 = 1 - var(res) / var(y),
+    rmse = sqrt(mean(res^2)),
+    mae = mean(abs(res)))
 }
+
 
 mtry <- 2
 

@@ -2,11 +2,11 @@
 # Regression Examples
 #======================================================================
 
+library(tidyverse)
 library(glmnet)
-library(ggplot2) # for data set "diamonds"
-library(xgboost)
-library(ranger)
 library(rpart)
+library(ranger)
+library(xgboost)
 library(lightgbm)
 # installation of lightgbm (might cause some headaches, but without GPU okay)
 # library(devtools)
@@ -16,12 +16,10 @@ library(lightgbm)
 # Data prep 
 #======================================================================
 
-diamonds <- transform(as.data.frame(diamonds),
-                      log_price = log(price),
-                      log_carat = log(carat),
-                      cut = as.numeric(cut),
-                      color = as.numeric(color),
-                      clarity = as.numeric(clarity))
+diamonds <- diamonds %>% 
+  mutate_if(is.ordered, as.numeric) %>% 
+  mutate(log_price = log(price),
+         log_carat = log(carat))
 
 # Train/test split
 set.seed(3928272)
@@ -30,9 +28,9 @@ set.seed(3928272)
 x <- c("log_carat", "cut", "color", "clarity", "depth", "table")
 y <- "log_price"
 
-train <- list(y = diamonds[.in, y],
+train <- list(y = diamonds[[y]][.in], 
               X = as.matrix(diamonds[.in, x]))
-test <- list(y = diamonds[!.in, y],
+test <- list(y = diamonds[[y]][!.in],
              X = as.matrix(diamonds[!.in, x]))
 trainDF <- diamonds[.in, c(y, x)]
 testDF <- diamonds[!.in, c(y, x)]
@@ -43,9 +41,10 @@ testDF <- diamonds[!.in, c(y, x)]
 
 # Some performance measures
 perf <- function(y, pred) {
-  c(r2 = 1 - var(y - pred) / var(y),
-    rmse = sqrt(mean((y - pred)^2)),
-    mae = mean(abs(y - pred)))
+  res <- y - pred
+  c(r2 = 1 - var(res) / var(y),
+    rmse = sqrt(mean(res^2)),
+    mae = mean(abs(res)))
 }
 
 #======================================================================
@@ -54,14 +53,22 @@ perf <- function(y, pred) {
 
 # Use cross-validation to find best alpha and lambda, the two penalization parameters of elastic net
 for (i in 0:10) {
-  fit_ols <- cv.glmnet(x = train$X, y = train$y, alpha = i / 10, nfolds = 5, type.measure = "mse")
+  fit_ols <- cv.glmnet(x = train$X, 
+                       y = train$y, 
+                       alpha = i / 10, 
+                       nfolds = 5, 
+                       type.measure = "mse")
   if (i == 0) cat("\n alpha\t rmse (CV)")
   cat("\n", i / 10, "\t", sqrt(min(fit_ols$cvm)))
 }
 
 # Use CV to find best lambda given optimal alpha of 0.2
 set.seed(342)
-fit_ols <- cv.glmnet(x = train$X, y = train$y, alpha = 0.2, nfolds = 5, type.measure = "mse")
+fit_ols <- cv.glmnet(x = train$X, 
+                     y = train$y, 
+                     alpha = 0.2, 
+                     nfolds = 5, 
+                     type.measure = "mse")
 cat("Best rmse (CV):", sqrt(min(fit_ols$cvm))) # 0.146478
 
 # # On test sample (always with best lambda)
@@ -207,10 +214,10 @@ head(paramGrid <- paramGrid[order(-paramGrid$score), ])
 # Use best only (no ensembling)
 cat("Best rmse (CV):", -paramGrid[1, "score"]) # 0.09608951
 
-fit_lgb <- lgb.train(paramGrid[1, -(1:2)], 
+system.time(fit_lgb <- lgb.train(paramGrid[1, -(1:2)], 
                      data = dtrain_lgb, 
                      nrounds = paramGrid[1, "iteration"] * 1.05,
-                     objective = "regression")
+                     objective = "regression"))
 
 # Interpretation
 imp_lgb <- lgb.importance(fit_lgb)
