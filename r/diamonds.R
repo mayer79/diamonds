@@ -19,7 +19,7 @@ library(lightgbm)
 diamonds <- diamonds %>% 
   mutate_if(is.ordered, as.numeric) %>% 
   mutate(log_price = log(price),
-         log_carat = log(carat))
+         log_carat = log(carat)) 
 
 # Train/test split
 set.seed(3928272)
