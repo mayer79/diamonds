@@ -8,6 +8,7 @@ library(rpart)
 library(ranger)
 library(xgboost)
 library(lightgbm)
+library(catboost)
 # installation of lightgbm (might cause some headaches, but without GPU okay)
 # library(devtools)
 # install_github("Microsoft/LightGBM", subdir = "R-package")
@@ -123,7 +124,7 @@ watchlist <- list(train = dtrain_xgb)
 # Grid search CV (vary different parameters together first to narrow reasonable range)
 paramGrid <- expand.grid(iteration = NA_integer_, # filled by algorithm
                          score = NA_real_,     # "
-                         learning_rate = c(0.02, 0.05), # c(0.2, 0.1, 0.05, 0.02, 0.01),
+                         learning_rate = 0.2, #c(0.02, 0.05), # c(0.2, 0.1, 0.05, 0.02, 0.01),
                          max_depth = 5:7, # 1:10, -> 5:6
                          min_child_weight = c(0, 1e-04, 1e-2), # c(0, 10^-(-1:4)) -> 1e-04
                          colsample_bytree = c(0.5, 0.7, 0.9), # seq(0.5, 1, by = 0.1), # 
@@ -247,3 +248,28 @@ pred <- rowMeans(do.call(cbind, predList))
 # # Test
 # perf(test$y, pred) # 0.99126 R2
 
+
+#======================================================================
+# gradient boosting with "catboost". Strong with categorical input
+#======================================================================
+
+train_pool <- catboost.load_pool(train$X, label = train$y)
+test_pool <- catboost.load_pool(test$X)
+
+
+param_list <- list(loss_function = 'RMSE',
+                   learning_rate = 0.02,
+                   iterations = 500, 
+                 #  l2_leaf_reg = 5,
+                   bootstrap_type = "Bernoulli",
+                   subsample = 0.8,
+                   rsm = 1,
+                   depth = 5,
+                   thread_count = 5,
+                   border_count = 63,
+                   metric_period = 100)
+
+system.time(fit_cb <- catboost.train(train_pool,  NULL, params = param_list))
+
+pred <- catboost.predict(fit_cb, test_pool)
+perf(test$y, pred) # 0.98944808
