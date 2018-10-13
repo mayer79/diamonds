@@ -9,9 +9,9 @@ library(ranger)
 library(xgboost)
 library(lightgbm)
 library(catboost)
-# installation of lightgbm (might cause some headaches, but without GPU okay)
-# library(devtools)
-# install_github("Microsoft/LightGBM", subdir = "R-package")
+library(caret)
+
+# devtools::install_url('https://github.com/catboost/catboost/releases/download/v0.10.0/catboost-R-Windows-0.10.0.tgz', args = c("--no-multiarch"))
 
 #======================================================================
 # Data prep 
@@ -253,23 +253,108 @@ pred <- rowMeans(do.call(cbind, predList))
 # gradient boosting with "catboost". Strong with categorical input
 #======================================================================
 
-train_pool <- catboost.load_pool(train$X, label = train$y)
-test_pool <- catboost.load_pool(test$X)
-
-
+# Untuned example
 param_list <- list(loss_function = 'RMSE',
-                   learning_rate = 0.02,
-                   iterations = 500, 
-                 #  l2_leaf_reg = 5,
-                   bootstrap_type = "Bernoulli",
-                   subsample = 0.8,
+                   learning_rate = 0.05,
+                   iterations = 10000, 
+                   l2_leaf_reg = 0,
+                   #bootstrap_type = "Bernoulli",
+                  # subsample = 0.8,
                    rsm = 1,
-                   depth = 5,
-                   thread_count = 5,
-                   border_count = 63,
+                   eval_metric = 'RMSE',
+                   od_wait = 20,
+                   od_type = "Iter",
+                   use_best_model = TRUE,
+                   depth = 4,
+                   thread_count = 7,
+                   border_count = 128,
                    metric_period = 100)
 
-system.time(fit_cb <- catboost.train(train_pool,  NULL, params = param_list))
+folds <- caret::createFolds(train$y, k = 5)
+pred_oof <- numeric(length(train$y))
+best_iter <- numeric(length(folds))
+  
+for (f in folds) { # f <- folds[[1]]
+  learn_pool = catboost.load_pool(train$X[-f, ], label = train$y[-f])
+  test_pool = catboost.load_pool(train$X[f, ], label = train$y[f])
+  
+  fit_cb <- catboost.train(learn_pool, test_pool, params = param_list)  
+  pred_oof[f] <- catboost.predict(fit_cb, test_pool)
+}
 
-pred <- catboost.predict(fit_cb, test_pool)
-perf(test$y, pred) # 0.98944808
+perf(train$y, pred_oof)
+
+
+# Grid search
+paramGrid <- expand.grid(best_iter = NA_integer_, # filled by algorithm
+                         score = NA_real_, 
+                         learning_rate = 0.05, #c(0.05, 0.02)
+                         depth = 3:10,
+                         l2_leaf_reg = 0:5,
+                         rsm = c(0.6, 0.8, 1),
+                         thread_count = 7,
+                         logging_level = "Silent",
+                         loss_function = 'RMSE',
+                         eval_metric = 'RMSE',
+                         iterations = 10000, # early stopping, see next param
+                         od_wait = 20,
+                         od_type = "Iter",
+                         use_best_model = TRUE,
+                         border_count = 128,
+                         stringsAsFactors = FALSE)
+
+(n <- nrow(paramGrid)) # 2160
+set.seed(34234)
+paramGrid <- paramGrid[sample(n, 30), ]
+(n <- nrow(paramGrid)) # 100
+
+# Create CV folds
+folds <- caret::createFolds(train$y, k = 5)
+
+rmse <- function(y, pred) {
+  sqrt(mean((y - pred)^2))
+}
+
+for (i in seq_len(n)) {
+  print(i)
+  pred_oof <- numeric(length(folds))
+  best_iter <- numeric(length(folds))
+  
+  for (j in 1:length(folds)) {
+    cat(".")
+    f <- folds[[j]]
+    test_pool = catboost.load_pool(train$X[f, ], label = train$y[f])
+    
+    fit <- catboost.train(catboost.load_pool(train$X[-f, ], label = train$y[-f]), 
+                          test_pool, 
+                          params = as.list(paramGrid[i, -(1:2)]))  
+    
+    pred_oof[j] <- rmse(train$y[f], catboost.predict(fit, test_pool))
+    best_iter[j] <- fit$tree_count
+  }
+  
+  paramGrid[i, 1:2] <- c(mean(best_iter), mean(pred_oof))
+  save(paramGrid, file = "paramGrid_cb.RData") # if lgb crashes
+}
+
+
+# load("paramGrid_cb.RData", verbose = TRUE)
+head(paramGrid <- paramGrid[order(paramGrid$score), ])
+
+# Use best only (no ensembling)
+cat("Best rmse (CV):", paramGrid[1, "score"]) # 0.09608951
+
+best_params <- paramGrid[1, ] %>% 
+  select(-logging_level, -use_best_model, -iterations, -score, -od_type, -od_wait) %>% 
+  rename(iterations = best_iter) %>%
+  mutate(metric_period = 100,
+         learning_rate = 0.02,
+         iterations = 3*round(iterations, -2)) %>% 
+  unclass
+
+fit_cb <- catboost.train(catboost.load_pool(train$X, label = train$y), 
+                         params = best_params)
+
+pred <- catboost.predict(fit_cb, catboost.load_pool(test$X))
+perf(test$y, pred) # 0.9905
+
