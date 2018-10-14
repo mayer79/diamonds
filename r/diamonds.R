@@ -158,11 +158,14 @@ for (i in seq_len(n)) { # i = 1
 # load("paramGrid_xgb.RData", verbose = TRUE)
 head(paramGrid <- paramGrid[order(paramGrid$score), ])
 
+# paramGrid$tree_method <- "gpu_hist"
+# paramGrid$lambda <- 0
+
 # Best only (no ensembling)
 cat("Best rmse (CV):", paramGrid[1, "score"]) # 0.096946
 fit_xgb <- xgb.train(paramGrid[1, -(1:2)], 
                      data = dtrain_xgb, 
-                     nrounds = paramGrid[1, "iteration"] * 1.05,
+                     nrounds = paramGrid[1, "iteration"],
                      objective = "reg:linear")
 pred <- predict(fit_xgb, test$X)
 perf(test$y, pred) # 0.99108733
@@ -348,8 +351,9 @@ best_params <- paramGrid[1, ] %>%
   select(-logging_level, -use_best_model, -iterations, -score, -od_type, -od_wait) %>% 
   rename(iterations = best_iter) %>%
   mutate(metric_period = 100,
-         learning_rate = 0.02,
-         iterations = 3*round(iterations, -2)) %>% 
+     #    task_type = "GPU",
+         iterations = round(iterations),
+         border_count = 32) %>% 
   unclass
 
 fit_cb <- catboost.train(catboost.load_pool(train$X, label = train$y), 
