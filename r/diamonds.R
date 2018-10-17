@@ -22,19 +22,17 @@ diamonds <- diamonds %>%
   mutate(log_price = log(price),
          log_carat = log(carat)) 
 
-# Train/test split
-set.seed(3928272)
-.in <- sample(c(FALSE, TRUE), nrow(diamonds), replace = TRUE, p = c(0.15, 0.85))
-
 x <- c("log_carat", "cut", "color", "clarity", "depth", "table")
 y <- "log_price"
 
-train <- list(y = diamonds[[y]][.in], 
-              X = as.matrix(diamonds[.in, x]))
-test <- list(y = diamonds[[y]][!.in],
-             X = as.matrix(diamonds[!.in, x]))
-trainDF <- diamonds[.in, c(y, x)]
-testDF <- diamonds[!.in, c(y, x)]
+# Train/test split
+set.seed(3928272)
+ind <- caret::createDataPartition(diamonds[[y]], p = 0.85, list = FALSE) %>% c
+
+train <- list(y = diamonds[[y]][ind], X = as.matrix(diamonds[ind, x]))
+test <- list(y = diamonds[[y]][-ind], X = as.matrix(diamonds[-ind, x]))
+trainDF <- diamonds[ind, ]
+testDF <- diamonds[-ind, ]
 
 #======================================================================
 # Small function
@@ -53,24 +51,26 @@ perf <- function(y, pred) {
 #======================================================================
 
 # Use cross-validation to find best alpha and lambda, the two penalization parameters of elastic net
-for (i in 0:10) {
+steps <- 10
+
+for (i in seq_len(steps)) {
   fit_ols <- cv.glmnet(x = train$X, 
                        y = train$y, 
-                       alpha = i / 10, 
+                       alpha = i / steps, 
                        nfolds = 5, 
                        type.measure = "mse")
   if (i == 0) cat("\n alpha\t rmse (CV)")
-  cat("\n", i / 10, "\t", sqrt(min(fit_ols$cvm)))
+  cat("\n", i / steps, "\t", sqrt(min(fit_ols$cvm)))
 }
 
-# Use CV to find best lambda given optimal alpha of 0.2
+# Use CV to find best lambda given optimal alpha of 0.3
 set.seed(342)
 fit_ols <- cv.glmnet(x = train$X, 
                      y = train$y, 
                      alpha = 0.2, 
                      nfolds = 5, 
                      type.measure = "mse")
-cat("Best rmse (CV):", sqrt(min(fit_ols$cvm))) # 0.146478
+cat("Best rmse (CV):", sqrt(min(fit_ols$cvm))) # 0.1463257
 
 # # On test sample (always with best lambda)
 # pred <- predict(fit_ols, test$X)
@@ -99,20 +99,17 @@ for (m in seq_along(x)) {
 
 # Use optimal mtry to fit 500 trees
 m <- 3
-fit_rf <- ranger(reformulate(x, y), 
-                 data = trainDF, importance = "impurity", num.trees = 500, 
+fit_rf <- ranger(reformulate(x, y), data = trainDF, 
+                 importance = "impurity", num.trees = 500, 
                  mtry = m, seed = 837363)
-cat("Best rmse (OOB):", sqrt(fit_rf$prediction.error)) # 0.1035
+cat("Best rmse (OOB):", sqrt(fit_rf$prediction.error)) # 0.1033
 
-# Interpretation
-imp_rf <- sort(importance(fit_rf))
-imp_rf_df <- data.frame(Feature = names(imp_rf), Gain = imp_rf, 
-                        row.names = NULL)[rev(seq_along(imp_rf)), ]
-par(mar = c(3, 12, 0, 1))
-barplot(imp_rf)
 object.size(fit_rf) # 424 MB
 
-# perf(test$y, predict(fit_rf, testDF)$predictions) # 0.1018
+# Log-impurity gains
+barplot(fit_rf %>% importance %>% sort %>% log)
+
+# perf(test$y, predict(fit_rf, testDF)$predictions) 
 
 #======================================================================
 # gradient boosting with "XGBoost"
@@ -135,7 +132,7 @@ paramGrid <- expand.grid(iteration = NA_integer_, # filled by algorithm
                          nthread = 3, # ok?
                          eval_metric = "rmse")
 
-(n <- nrow(paramGrid)) # 2916
+(n <- nrow(paramGrid))
 set.seed(342267)
 paramGrid <- paramGrid[sample(n, 10), ]
 (n <- nrow(paramGrid)) # 100
@@ -162,13 +159,13 @@ head(paramGrid <- paramGrid[order(paramGrid$score), ])
 # paramGrid$lambda <- 0
 
 # Best only (no ensembling)
-cat("Best rmse (CV):", paramGrid[1, "score"]) # 0.096946
+cat("Best rmse (CV):", paramGrid[1, "score"]) # 0.0961354
 fit_xgb <- xgb.train(paramGrid[1, -(1:2)], 
                      data = dtrain_xgb, 
                      nrounds = paramGrid[1, "iteration"],
                      objective = "reg:linear")
-pred <- predict(fit_xgb, test$X)
-perf(test$y, pred) # 0.99108733
+# pred <- predict(fit_xgb, test$X)
+# perf(test$y, pred) 
 
 #======================================================================
 # gradient boosting with "lightGBM"
@@ -216,12 +213,12 @@ for (i in seq_len(n)) {
 head(paramGrid <- paramGrid[order(-paramGrid$score), ])
 
 # Use best only (no ensembling)
-cat("Best rmse (CV):", -paramGrid[1, "score"]) # 0.09608951
+cat("Best rmse (CV):", -paramGrid[1, "score"]) # 0.0966
 
 system.time(fit_lgb <- lgb.train(paramGrid[1, -(1:2)], 
-                     data = dtrain_lgb, 
-                     nrounds = paramGrid[1, "iteration"] * 1.05,
-                     objective = "regression"))
+                                 data = dtrain_lgb, 
+                                 nrounds = paramGrid[1, "iteration"],
+                                 objective = "regression"))
 
 # Interpretation
 imp_lgb <- lgb.importance(fit_lgb)
@@ -242,14 +239,14 @@ for (i in seq_len(m)) {
   print(i)
   fit_temp <- lgb.train(paramGrid[i, -(1:2)], 
                         data = dtrain_lgb, 
-                        nrounds = paramGrid[i, "iteration"] * 1.05,
+                        nrounds = paramGrid[i, "iteration"],
                         objective = "regression",
                         verbose = -1)
   predList[[i]] <- predict(fit_temp, test$X)
 }
 pred <- rowMeans(do.call(cbind, predList))
 # # Test
-# perf(test$y, pred) # 0.99126 R2
+# perf(test$y, pred) # 0.99132587
 
 
 #======================================================================
@@ -273,13 +270,14 @@ param_list <- list(loss_function = 'RMSE',
                    border_count = 128,
                    metric_period = 100)
 
+# With five-fold CV
 folds <- caret::createFolds(train$y, k = 5)
 pred_oof <- numeric(length(train$y))
 best_iter <- numeric(length(folds))
   
 for (f in folds) { # f <- folds[[1]]
-  learn_pool = catboost.load_pool(train$X[-f, ], label = train$y[-f])
-  test_pool = catboost.load_pool(train$X[f, ], label = train$y[f])
+  learn_pool <- catboost.load_pool(train$X[-f, ], label = train$y[-f])
+  test_pool <- catboost.load_pool(train$X[f, ], label = train$y[f])
   
   fit_cb <- catboost.train(learn_pool, test_pool, params = param_list)  
   pred_oof[f] <- catboost.predict(fit_cb, test_pool)
