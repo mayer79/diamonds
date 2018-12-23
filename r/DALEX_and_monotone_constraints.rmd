@@ -1,0 +1,113 @@
+---
+title: "DALEX - Descriptive mAchine Learning EXplanationsA"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Initializing stuff
+
+```{r}
+options(warn=-1)
+
+library(xgboost)
+library(gbm)
+library(DALEX) # For model interpretation
+library(tidyverse) # For data prep
+library(caret) # For data split
+
+rmse <- function(y, pred) {
+  sqrt(sum((y - pred)^2))
+}
+
+head(diamonds) 
+
+diamonds <- diamonds %>% 
+  mutate_if(is.ordered, as.numeric) %>% 
+  mutate(log_price = log(price),
+         log_carat = log(carat)) 
+
+x <- c("log_carat", "cut", "color", "clarity", "depth", "table")
+y <- "log_price"
+
+# Train/test split
+set.seed(3928272)
+ind <- caret::createDataPartition(diamonds[[y]], p = 0.85, list = FALSE) %>% c
+
+train <- list(y = diamonds[[y]][ind], X = data.matrix(diamonds[ind, x]))
+valid <- list(y = diamonds[[y]][-ind], X = data.matrix(diamonds[-ind, x]))
+
+trainDF <- diamonds[ind, ]
+validDF <- diamonds[-ind, ]
+
+train_xgb <- xgb.DMatrix(train$X, label = train$y)
+valid_xgb <- xgb.DMatrix(valid$X, label = valid$y)
+
+# Models
+param_xgb <- list(max_depth = 5, 
+                  eta = 0.05, 
+                  nthread = 4, 
+                  objective = "reg:linear",
+                  monotone_constraints = c(1, 1, 0, 0, 0, 0),
+                  metric = "rmse")
+```
+
+
+## Fit the models
+```{r}
+lm_model <- lm(reformulate(x, y), data = trainDF)
+summary(lm_model)
+
+gbm_model <- gbm(reformulate(x, y), data = trainDF, n.trees = 200, 
+                 interaction.depth = 3, shrinkage = 0.05, var.monotone = c(1, 1, 0, 0, 0, 0))
+
+xgb_model <- xgb.train(param_xgb, train_xgb, nrounds = 300, verbose = 1, watchlist = list(valid = valid_xgb), print_every_n = 100)
+```
+
+## Initializing the "explainer"
+```{r}
+explainer_lm <- explain(lm_model, data = validDF, y = validDF[[y]], label = "lm")
+explainer_gbm <- explain(gbm_model, data = validDF, y = validDF[[y]], label = "gbm",
+                         predict_function = function(model, x) predict(model, x, n.trees = 200))
+explainer_xgb <- explain(xgb_model, data = valid$X, y = valid$y, label = "xgboost")
+
+explainers <- list(explainer_lm, explainer_gbm, explainer_xgb)
+```
+
+## Model performance
+```{r}
+mp <- lapply(explainers, model_performance)
+do.call(plot, mp)
+```
+
+## Relationship between log_carat and log_price
+```{r}
+sv_carat <- lapply(explainers, single_variable, variable = "log_carat", type = "pdp")
+do.call(plot, sv_carat)
+```
+
+## Relationship between cut and log_price
+```{r}
+sv_cut <- lapply(explainers, single_variable, variable = "cut", type = "pdp")
+do.call(plot, sv_cut)
+```
+
+## Contribution of each variable in predicting the first obs
+
+```{r, fig.height=10}
+validDF[1, ]
+
+sp_lm  <- single_prediction(explainer_lm, observation = validDF[1, ])
+sp_gbm  <- single_prediction(explainer_gbm, observation = validDF[1, ])
+sp_xgb  <- single_prediction(explainer_xgb, observation = valid$X[1, , drop = FALSE])
+
+plot(sp_lm, sp_gbm, sp_xgb) # almost the full effect comes from carat
+```
+
+## Variable importance
+```{r}
+vd <- lapply(explainers, variable_importance, type = "raw")
+do.call(plot, vd)
+
+```
+
