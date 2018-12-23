@@ -41,7 +41,8 @@ testDF <- diamonds[-ind, ]
 # Some performance measures
 perf <- function(y, pred) {
   res <- y - pred
-  c(r2 = 1 - var(res) / var(y),
+  n <- length(y)
+  c(r2 = 1 - mean(res^2) * n / (n - 1) / var(y),
     rmse = sqrt(mean(res^2)),
     mae = mean(abs(res)))
 }
@@ -102,7 +103,7 @@ m <- 3
 fit_rf <- ranger(reformulate(x, y), data = trainDF, 
                  importance = "impurity", num.trees = 500, 
                  mtry = m, seed = 837363)
-cat("Best rmse (OOB):", sqrt(fit_rf$prediction.error)) # 0.1033
+cat("Best rmse (OOB):", sqrt(fit_rf$prediction.error)) # 0.1032
 
 object.size(fit_rf) # 424 MB
 
