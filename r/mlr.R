@@ -1,4 +1,21 @@
 library(mlr)
+library(tidyverse)
+library(ranger)
+
+# devtools::install_url('https://github.com/catboost/catboost/releases/download/v0.10.0/catboost-R-Windows-0.10.0.tgz', args = c("--no-multiarch"))
+
+#======================================================================
+# Data prep 
+#======================================================================
+
+diamonds <- diamonds %>% 
+  mutate_if(is.ordered, as.numeric) %>% 
+  mutate(log_price = log(price),
+         log_carat = log(carat)) 
+
+x <- c("log_carat", "cut", "color", "clarity", "depth", "table")
+y <- "log_price"
+
 
 # Train/test split
 set.seed(3928272)
@@ -28,4 +45,4 @@ res <- tuneParams(lrn_rf,
 lrn_rf_opt <- setHyperPars(lrn_rf, par.vals = res$x)
 fit <- train(lrn_rf_opt, price_task)
 pred <- predict(fit, newdata = testDF)
-performance(pred) # 0.01149185 
+performance(pred, rmse) # 0.1033975
