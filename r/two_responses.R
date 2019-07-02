@@ -1,8 +1,7 @@
 #======================================================================
-# Regression Examples
+# Illustration how two responses can be modelled by one single model
 #======================================================================
 
-# library(moderndive); house_prices
 library(tidyverse)
 library(ranger)
 library(lightgbm)
@@ -23,7 +22,7 @@ diamonds_long <- diamonds %>%
   mutate(log_price = log(price),
          cut = as.integer(cut)) %>% 
   select(-x, -y, -z, -price) %>% 
-  gather(key = stratum, value = "response", log_price, cut, factor_key = TRUE)
+  gather(key = "price_or_cut", value = "response", log_price, cut, factor_key = TRUE)
 head(diamonds_long)
 str(diamonds_long)
 
@@ -47,16 +46,15 @@ trainDF <- diamonds_long[ind, ]
 testDF <- diamonds_long[-ind, ]
 
 #======================================================================
-# Small function
+# Small functions
 #======================================================================
 
-# Some performance measures
-perf <- function(y, pred) {
-  res <- y - pred
-  n <- length(y)
-  c(r2 = 1 - mean(res^2) * n / (n - 1) / var(y),
-    rmse = sqrt(mean(res^2)),
-    mae = mean(abs(res)))
+rmse <- function(y, pred) {
+  sqrt(mean((y - pred)^2))
+}
+
+mae <- function(y, pred) {
+  mean(abs(y - pred))
 }
 
 #======================================================================
@@ -65,14 +63,14 @@ perf <- function(y, pred) {
 
 fit_rf <- ranger(reformulate(x, y), data = trainDF, 
                  importance = "impurity", num.trees = 500, seed = 837363)
-cat("Best rmse (OOB):", sqrt(fit_rf$prediction.error)) # 0.7402522
+cat("Best rmse (OOB):", sqrt(fit_rf$prediction.error))
 
 object.size(fit_rf) # 424 MB
 
 # Log-impurity gains
 barplot(fit_rf %>% importance %>% sort)
 
-# perf(test$y, predict(fit_rf, testDF)$predictions) 
+# rmse(test$y, predict(fit_rf, testDF)$predictions) 
 
 #======================================================================
 # gradient boosting with "lightGBM"
@@ -84,7 +82,7 @@ load("paramGrid_lgb.RData", verbose = TRUE)
 head(paramGrid <- paramGrid[order(-paramGrid$score), ])
 
 # Use best only (no ensembling)
-cat("Best rmse (CV):", -paramGrid[1, "score"]) # 0.0966
+cat("Best rmse (CV):", -paramGrid[1, "score"])
 
 system.time(fit_lgb <- lgb.train(paramGrid[1, -(1:2)], 
                                  data = dtrain_lgb, 
@@ -96,7 +94,32 @@ imp_lgb <- lgb.importance(fit_lgb)
 print(imp_lgb)
 lgb.plot.importance(imp_lgb, top_n = length(x))
 
+
+#======================================================================
+# Performance
+#======================================================================
+
+null_model <- trainDF %>% 
+  group_by_at(stratum) %>% 
+  summarize(`Empty Model` = mean(response))
+
+perf_table <- testDF %>%  
+  select_at(c(stratum, "response")) %>% 
+  mutate(`Random Forest` = predict(fit_rf, testDF)$pred,
+         `Gradient Boosting` = predict(fit_lgb, lgb_mapping(testDF))) %>%
+  left_join(null_model) %>% 
+  gather(key = "Model", value = "pred", -one_of(stratum, "response")) %>% 
+  group_by_at(c("Model", stratum)) %>% 
+  summarize(n = n(), RMSE = rmse(response, pred))
+
+ggplot(perf_table, aes_string(y = "RMSE", x = "Model")) +
+  geom_bar(aes(fill = Model), stat = "identity", position = "dodge") +
+  facet_wrap(reformulate(stratum))
+
+#======================================================================
 # DALEX
+#======================================================================
+
 y_splitted <- split(testDF[[y]], testDF[[stratum]])
 DF_splitted <- split(testDF %>% select(-one_of(y)), testDF[[stratum]])
 
