@@ -28,9 +28,9 @@ dtrainval <- xgb.DMatrix(
 )
 
 # Split into train and valid
-n_left <- nrow(dtrainval)
-ix_valid <- sample(n_left, n_left %/% 4)
-ix_train <- setdiff(1:n_left, ix_valid)
+n1 <- nrow(dtrainval)
+ix_valid <- sample(n1, n1 %/% 4)
+ix_train <- setdiff(1:n1, ix_valid)
 
 dtrain <- slice(dtrainval, ix_train)
 dvalid <- slice(dtrainval, ix_valid)
@@ -48,6 +48,7 @@ params <- list(
 # - "extreme" would correspond to "weibull" AFT
 # - "logistic" would correspond to "loglogistic" AFT
 
+# Manual parameter search
 fit_temp <- xgb.train(
   params,
   dtrain,  
@@ -92,7 +93,7 @@ concordance(surv_test ~ pred_parametric) # 0.7178
 library(SHAPforxgboost)
 
 shap_values <- shap.prep(fit, X_train = X[ix_test, ])
-shap.plot.summary(shap_values)
+shap.importance(shap_values)
 shap.plot.dependence(shap_values, "x1", smooth = FALSE, 
                      color_feature = "auto")
 shap.plot.dependence(shap_values, "x2", smooth = FALSE, 
