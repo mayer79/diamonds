@@ -88,3 +88,12 @@ summary(pred_parametric)
 summary(y_test)
 concordance(surv_test ~ pred_parametric) # 0.7178
 
+# SHAP-Analysis (log-prediction scale)
+library(SHAPforxgboost)
+
+shap_values <- shap.prep(fit, X_train = X[ix_test, ])
+shap.plot.summary(shap_values)
+shap.plot.dependence(shap_values, "x1", smooth = FALSE, 
+                     color_feature = "auto")
+shap.plot.dependence(shap_values, "x2", smooth = FALSE, 
+                     color_feature = "auto")
